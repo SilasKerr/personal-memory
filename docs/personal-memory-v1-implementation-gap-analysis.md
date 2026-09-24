@@ -1,5 +1,7 @@
 # Personal Memory v1 — Implementation Gap Analysis
 
+**Status:** Pre-convergence historical analysis. It records gaps in the experimental repository before the v1 implementation and does not describe the current code state.
+
 **Basis:** latest uploaded repository snapshot + frozen v1 direction from the current design discussion.
 
 ## Executive summary

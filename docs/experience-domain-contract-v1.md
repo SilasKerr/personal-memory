@@ -1,6 +1,6 @@
 # Experience Domain Contract v1 — Confirmed
 
-**状态：Confirmed。** 本契约按《Personal Memory v1 — Final Project Requirements》收缩 v1 范围。现有代码是实验性参考，本轮不修改代码，也不定义 SaveProposal、ChangeSet、Search 或 MCP 接口。
+**状态：Confirmed。** 本契约按《Personal Memory v1 — Final Project Requirements》收缩 v1 范围，不定义 SaveProposal、ChangeSet、Search 或 MCP 接口。
 
 ## 1. Definition and responsibility
 
@@ -136,11 +136,7 @@ v1 所有正式 Experience 都是当前可使用的知识；读取时须显示 m
 
 上述是对各项目公开 README 的设计取舍；v1 不因参考项目有 supersede 或 consolidation 就实现这些能力，不复制代码。
 
-## 15. Implementation mismatch
-
-现有实验性 [schemas.ts](../src/domain/schemas.ts) 仍使用整体 Experience body，包含 lifecycle、双向演化关系、`source_projects` 和 tags；[changeset-service.ts](../src/services/changeset-service.ts) 仍准备 merge / supersede。本契约不以这些字段或操作定义 v1。现有流程也尚未实现完整目标语义状态的 enrich 基准检查及人工外部语义编辑待接纳。**本轮不修改代码。**
-
-## 16. Future compatibility — not v1 executable scope
+## 15. Future compatibility — not v1 executable scope
 
 长期可能加入 **merge、supersede、archive、abstract、不可变 revision 快照**。非绑定设计倾向：merge 可选择既有存续身份；supersede 可创建新身份；abstract 应区别于“同一知识的合并”；失效的历史知识不宜物理删除。真实使用若证明需要逐版本恢复 Experience 正文，可再增加不可变快照。
 

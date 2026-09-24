@@ -1,6 +1,6 @@
 # Project Domain Contract v1 — Confirmed
 
-本契约定义 Project 的领域行为。现有实现仍是实验性参考；本轮**未修改代码**，也不进入 Commit Contract。
+本契约定义 Project 的领域行为。
 
 ## 1. Project definition
 
@@ -134,14 +134,6 @@ Markdown 仍是**内容**的 source of truth；基准标记只回答“这份内
 
 确认以下 Project v1 原则：**不透明 Project ID；外部编辑需显式接纳；Commit 记录认知阶段并受可验证的维护性更正例外约束；v1 不存泛义 `experience_refs`；完整目标状态必须建立在一次明确读取及同一基准上。**
 
-### Implementation mismatch
-
-现有实现只是实验性参考，本轮不修复：
-
-- [schema]\(../src/domain/schemas.ts) 使用可读 slug 形态的 ID、`status` 和存储的 `latest_commit`；与本契约的 opaque ID、`lifecycle` 和派生最新 Commit 不同。
-- 现有 [prepare 逻辑]\(../src/services/changeset-service.ts) 接受局部 Project 更新，且新增 Commit 会更新 Project revision；本契约要求先读同一基准、提交完整目标状态，并按 Project 实际变化递增。
-- 现有读取流程尚无外部语义修改待接纳的读取状态与基准检查，也未实现本契约的 Commit 必须存在及 `maintenance correction` 例外校验。
-
 ## 10. Open questions
 
 没有阻碍 Project 领域契约确认的问题。Opaque ID 的具体编码、基准标记的存储位置和人工接纳操作的接口形式，留给后续实现契约；这里已确定它们必须满足的领域行为。
@@ -154,4 +146,4 @@ Markdown 仍是**内容**的 source of truth；基准标记只回答“这份内
 4. **Experience 关系**：v1 不存含义模糊的 `experience_refs`；来源关系从 Experience provenance 查询，人工精选入口若未来需要再单独命名。
 5. **完整目标快照**：强制“先读当前 Project → 绑定基准 → 构造完整目标 → prepare/apply 检查”。
 
-**Project Domain Contract v1 至此确认。停止在本阶段，等待 `Commit Domain Contract v1` 任务。**
+**Project Domain Contract v1 至此确认。**

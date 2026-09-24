@@ -1,6 +1,6 @@
 # Commit Domain Contract v1 — Confirmed
 
-**状态：Confirmed。** 本文只定义领域行为，不修改代码，也不改变已确认的 Project Contract。
+**状态：Confirmed。** 本文只定义领域行为，也不改变已确认的 Project Contract。
 
 ## 1. Commit definition
 
@@ -135,16 +135,7 @@ Commit 可保存简短的结构化 `experience_changes`：操作类型（`create
 
 参考项目的取舍：借鉴 [vartiainen1/agent-memory](https://github.com/vartiainen1/agent-memory) 对历史、provenance 和人工控制的重视；借鉴 [kaaustubh/project-memory-mcp](https://github.com/kaaustubh/project-memory-mcp) 的项目范围内决策与经验记录。借鉴 [maxkuminov/obsidian-mcp](https://github.com/maxkuminov/obsidian-mcp) 以可读笔记供人编辑的方向，以及 [jayzuccarelli/memory-mcp](https://github.com/jayzuccarelli/memory-mcp) 的 Markdown source of truth 与多客户端共享思路。[EtienneBBeaulac/memory-mcp](https://github.com/EtienneBBeaulac/memory-mcp) 的持续演化知识也有参考价值。Personal Memory 不采用这些项目的通用笔记 CRUD、自动写入、额外分类或复杂基础设施作为 Commit 领域规则，因为这里需要的是经确认的项目认知历史，而非任意记忆更新。以上借鉴的是设计取向，未复制代码。
 
-## 13. Implementation mismatch
-
-现有实验性实现与本契约至少有以下差异；**本阶段不修改它们**：
-
-- [schemas.ts]\(../src/domain/schemas.ts) 中 Commit 仍使用 `previous_commit` metadata，正文是未约束的整体字符串；没有本契约的必需叙述校验、Experience 操作记录或认知修订引用。
-- [changeset-service.ts]\(../src/services/changeset-service.ts) 以 Project ID 与 sequence 构造 Commit ID，并在 prepare 时确定 `created_at`；本契约要求 opaque ID，正式接纳时间作为创建时间。
-- 同一服务把 `latest_commit` 存在 Project 中，并可能因仅新增 Commit 而更新 Project；已确认的 Project Contract 要求从历史派生该值，且 Project 快照不变时 revision 不增加。
-- [commit-repository.ts]\(../src/repositories/commit-repository.ts) 已有线性追加及不提供 update 的方向，但目前同时依赖 sequence 与持久化前驱。
-
-## 14. Open questions
+## 13. Open questions
 
 没有阻止本契约成立的领域问题。留给后续契约与实现设计确定的是：`experience_changes` 的具体 Markdown 编码、已应用 ChangeSet 的保存期限，以及完整性基准与维护记录的存储方式。这些选择不得改变上述不可变性、排序和冲突规则。
 
