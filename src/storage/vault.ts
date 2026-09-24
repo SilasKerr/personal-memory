@@ -11,6 +11,8 @@ export class Vault {
     await this.ensureDirectory('Projects');
     await this.ensureDirectory('Experiences');
     await this.ensureDirectory('.memory', 'changesets');
+    await this.ensureDirectory('.memory', 'baselines');
+    await this.ensureDirectory('.memory', 'transactions');
     await writeFile(path.join(this.root, '.memory', 'config.yaml'), 'version: 1\n', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'EEXIST') throw error;
     });
@@ -62,6 +64,14 @@ export class Vault {
 
   writeLockFile(): string {
     return path.join(this.root, '.memory', 'write.lock');
+  }
+
+  baselineFile(kind: 'project' | 'commit' | 'experience', id: string): string {
+    return path.join(this.root, '.memory', 'baselines', `${kind}-${idSchema.parse(id)}.json`);
+  }
+
+  transactionFile(): string {
+    return path.join(this.root, '.memory', 'transactions', 'active.json');
   }
 
   async ensureProjectDirectory(projectId: string): Promise<void> {

@@ -1,41 +1,56 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { Commit, Experience, Project } from '../src/domain/schemas.js';
-import { defaultCommitBody, defaultExperienceBody, defaultProjectBody } from '../src/domain/templates.js';
+import type { Commit, Experience, Project, SaveProposal } from '../src/domain/schemas.js';
 import { Vault } from '../src/storage/vault.js';
 
-const now = '2026-09-24T00:00:00Z';
+export const projectId = 'prj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+export const commitId = 'cmt-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+export const experienceId = 'exp-cccccccccccccccccccccccccccccccc';
+const at = '2026-09-24T00:00:00.000Z';
 
-export function project(metadata: Partial<Project['metadata']> = {}, body = defaultProjectBody('Personal Memory')): Project {
+export function project(overrides: Partial<Project> = {}): Project {
   return {
-    metadata: {
-      type: 'project', id: 'personal-memory', name: 'Personal Memory', status: 'active',
-      revision: 1, created_at: now, updated_at: now, latest_commit: null, ...metadata,
+    metadata: { type: 'project', id: projectId, revision: 1, created_at: at, updated_at: at, ...overrides.metadata },
+    content: {
+      name: 'Personal Memory', goal: 'Reliable project memory', current_state: 'Designing v1',
+      confirmed_decisions: [], open_questions: [], next_steps: ['Build v1'], lifecycle: 'active',
+      ...overrides.content,
     },
-    body,
   };
 }
 
-export function commit(metadata: Partial<Commit['metadata']> = {}, body = defaultCommitBody('Initial understanding')): Commit {
+export function commit(overrides: Partial<Commit> = {}): Commit {
   return {
     metadata: {
-      type: 'commit', id: 'pm-0001', project_id: 'personal-memory', sequence: 1,
-      created_at: now, previous_commit: null, ...metadata,
+      type: 'commit', id: commitId, project_id: projectId, sequence: 1, created_at: at,
+      revises_commit_ids: [], experience_changes: [], ...overrides.metadata,
     },
-    body,
+    content: {
+      title: 'Initial understanding', starting_point: 'No durable memory', key_findings: ['Need project context'],
+      ending_state: 'A project-first design', ...overrides.content,
+    },
   };
 }
 
-export function experience(metadata: Partial<Experience['metadata']> = {}, body = defaultExperienceBody('Use semantic interfaces')): Experience {
+export function experience(overrides: Partial<Experience> = {}): Experience {
   return {
     metadata: {
-      type: 'experience', id: 'semantic-interfaces', status: 'candidate', lifecycle: 'active',
-      revision: 1, created_at: now, updated_at: now, source_projects: ['personal-memory'],
-      source_commits: ['pm-0001'], supersedes: [], superseded_by: null,
-      merged_from: [], merged_into: null, abstracted_from: [], tags: [], ...metadata,
+      type: 'experience', id: experienceId, revision: 1, created_at: at, updated_at: at,
+      source_commits: [commitId], ...overrides.metadata,
     },
-    body,
+    content: {
+      title: 'Use semantic interfaces', core_statement: 'Agents should save through semantic APIs',
+      maturity: 'candidate', ...overrides.content,
+    },
+  };
+}
+
+export function proposal(overrides: Partial<SaveProposal> = {}): SaveProposal {
+  return {
+    project_id: projectId, base_project_revision: 1, base_commit_head: null,
+    change_kind: 'historical_change', project_target: project().content,
+    experiences: [], ignored_items: [], ...overrides,
   };
 }
 

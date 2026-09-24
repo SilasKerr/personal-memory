@@ -3,6 +3,8 @@ import path from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { MemoryService } from '../services/memory-service.js';
 import { Vault } from '../storage/vault.js';
+import { recoverTransaction } from '../storage/transaction.js';
+import { withVaultWriteLock } from '../storage/write-lock.js';
 import { createMcpServer } from './server.js';
 
 async function main(): Promise<void> {
@@ -10,6 +12,7 @@ async function main(): Promise<void> {
   if (!root || !path.isAbsolute(root)) throw new Error('PERSONAL_MEMORY_VAULT must be an absolute path to an initialized Vault');
   const vault = new Vault(root);
   await vault.validateExisting();
+  await withVaultWriteLock(vault, () => recoverTransaction(vault));
   const server = createMcpServer(new MemoryService(vault));
   await server.connect(new StdioServerTransport());
 }

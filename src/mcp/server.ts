@@ -2,6 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { idSchema, saveProposalSchema } from '../domain/schemas.js';
+import { renderProject, renderCommit, renderExperience } from '../domain/markdown-content.js';
 import { MemoryService } from '../services/memory-service.js';
 import { type MemoryCommitPreview } from '../services/preview.js';
 import { mapError } from './errors.js';
@@ -11,9 +12,11 @@ const commitIdInput = z.strictObject({ project_id: idSchema, commit_id: idSchema
 const experienceIdInput = z.strictObject({ experience_id: idSchema });
 const changesetIdInput = z.strictObject({ changeset_id: idSchema });
 const experienceFilterInput = z.strictObject({
-  status: z.enum(['candidate', 'validated', 'principle']).optional(),
-  lifecycle: z.enum(['active', 'merged', 'superseded']).optional(),
+  maturity: z.enum(['candidate', 'validated', 'principle']).optional(),
   project_id: idSchema.optional(),
+});
+const searchInput = z.strictObject({
+  query: z.string().min(1), kind: z.enum(['project', 'experience']).optional(), project_id: idSchema.optional(),
 });
 
 type ToolResult = {
@@ -60,12 +63,12 @@ export function createMcpServer(memory: MemoryService): Server {
     defineTool('memory_project_list', 'List Project summaries, newest first.', z.strictObject({}),
       async () => {
         const data = await memory.projectList();
-        return result(data, data.projects.map((item) => `${item.name} (${item.id}) — ${item.status}`).join('\n') || 'No Projects.');
+        return result(data, data.projects.map((item) => `${item.name} (${item.id}) — ${item.lifecycle}`).join('\n') || 'No Projects.');
       }),
-    defineTool('memory_project_get', 'Read a Project and its complete Markdown body.', projectIdInput,
+    defineTool('memory_project_get', 'Read a Project and its current structured state.', projectIdInput,
       async ({ project_id }) => {
         const data = await memory.projectGet(project_id);
-        return result(data, `${data.project.metadata.name}\n\n${data.project.body}`);
+        return result(data, `${data.read_state}\n\n${renderProject(data.project.content)}`);
       }),
     defineTool('memory_commit_list', 'List a Project Commit timeline without full bodies.', projectIdInput,
       async ({ project_id }) => {
@@ -75,17 +78,22 @@ export function createMcpServer(memory: MemoryService): Server {
     defineTool('memory_commit_get', 'Read a complete Commit.', commitIdInput,
       async ({ project_id, commit_id }) => {
         const data = await memory.commitGet(project_id, commit_id);
-        return result(data, data.commit.body);
+        return result(data, renderCommit(data.commit.content));
       }),
-    defineTool('memory_experience_list', 'List Experience summaries with optional metadata filters. Defaults to active lifecycle.', experienceFilterInput,
+    defineTool('memory_experience_list', 'List current Experience summaries with optional filters.', experienceFilterInput,
       async (filters) => {
         const data = await memory.experienceList(filters);
-        return result(data, data.experiences.map((item) => `${item.title} (${item.id}) — ${item.status}, ${item.lifecycle}`).join('\n') || 'No matching Experiences.');
+        return result(data, data.experiences.map((item) => `${item.title} (${item.id}) — ${item.maturity}`).join('\n') || 'No matching Experiences.');
       }),
-    defineTool('memory_experience_get', 'Read a complete Experience, including historical relations.', experienceIdInput,
+    defineTool('memory_experience_get', 'Read a current Experience.', experienceIdInput,
       async ({ experience_id }) => {
         const data = await memory.experienceGet(experience_id);
-        return result(data, data.experience.body);
+        return result(data, `${data.read_state}\n\n${renderExperience(data.experience.content)}`);
+      }),
+    defineTool('memory_search', 'Search current Projects and Experiences using normalized text.', searchInput,
+      async (input) => {
+        const data = await memory.search(input);
+        return result(data, data.results.map((item) => `${item.kind}: ${item.title} (${item.id}) — ${item.snippet}`).join('\n') || 'No results.');
       }),
     defineTool('memory_prepare_save', 'Prepare a SaveProposal and return a preview. Does not apply changes.', saveProposalSchema,
       async (proposal) => {
@@ -100,7 +108,7 @@ export function createMcpServer(memory: MemoryService): Server {
     defineTool('memory_apply_changeset', 'Apply a pending ChangeSet after the calling Agent has obtained user confirmation.', changesetIdInput,
       async ({ changeset_id }) => {
         const data = await memory.applyChangeSet(changeset_id);
-        return result(data, `Applied ChangeSet ${data.changeset_id} to Project ${data.project_id}.`);
+        return result(data, `ChangeSet ${data.changeset_id}: ${data.status}.`);
       }),
     defineTool('memory_reject_changeset', 'Reject a pending ChangeSet without changing knowledge.', changesetIdInput,
       async ({ changeset_id }) => {
@@ -125,13 +133,13 @@ export function formatPreview(preview: MemoryCommitPreview): string {
   lines.push('\nProject');
   if (preview.project) {
     lines.push(`- ${preview.project.id}: ${preview.project.changed_fields.join(', ')} (revision ${preview.project.next_revision})`);
-    if (preview.project.body !== null) lines.push(preview.project.body);
+    lines.push(preview.project.target_markdown);
   } else lines.push('- No Project update');
   lines.push('\nCommit');
-  if (preview.commit) lines.push(`- ${preview.commit.title} (${preview.commit.id})\n${preview.commit.body}`);
+  if (preview.commit) lines.push(`- ${preview.commit.title} (${preview.commit.id})\n${preview.commit.markdown}`);
   else lines.push('- No new Commit');
   lines.push('\nExperience');
-  if (preview.experiences.length) for (const item of preview.experiences) lines.push(`- ${item.purpose} / ${item.action}: ${item.title} (${item.id})\n${item.body}`);
+  if (preview.experiences.length) for (const item of preview.experiences) lines.push(`- ${item.action}: ${item.title} (${item.id}), ${item.maturity}\n${item.markdown}`);
   else lines.push('- No Experience changes');
   lines.push('\nIgnored');
   if (preview.ignored_items.length) for (const item of preview.ignored_items) lines.push(`- ${item.summary}: ${item.reason}`);

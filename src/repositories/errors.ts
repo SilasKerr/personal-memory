@@ -33,6 +33,20 @@ export class InvalidStateError extends Error {
   }
 }
 
+export class ExternalChangePendingError extends Error {
+  constructor(entity: string, id: string) {
+    super(`${entity} has an external semantic edit pending acceptance: ${id}`);
+    this.name = 'ExternalChangePendingError';
+  }
+}
+
+export class IntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IntegrityError';
+  }
+}
+
 export function hasFileCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
 }

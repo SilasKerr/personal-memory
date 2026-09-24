@@ -15,7 +15,7 @@ export class MemoryService {
   private readonly changeSets: ChangeSetRepository;
   private readonly lifecycle: ChangeSetService;
 
-  constructor(vault: Vault) {
+  constructor(private readonly vault: Vault) {
     this.projects = new ProjectRepository(vault);
     this.commits = new CommitRepository(vault);
     this.experiences = new ExperienceRepository(vault);
@@ -24,53 +24,95 @@ export class MemoryService {
   }
 
   async projectList() {
-    const projects = await this.projects.list();
-    return { projects: projects.map(({ metadata }) => ({
-      id: metadata.id, name: metadata.name, status: metadata.status,
-      updated_at: metadata.updated_at, latest_commit: metadata.latest_commit,
+    const projects = await this.projects.listInspected();
+    return { projects: projects.map(({ project, state }) => ({
+      id: project.metadata.id, name: project.content.name, lifecycle: project.content.lifecycle,
+      goal: project.content.goal, revision: project.metadata.revision, updated_at: project.metadata.updated_at,
+      read_state: state,
     })).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || a.id.localeCompare(b.id)) };
   }
 
   async projectGet(projectId: string) {
-    const project = await this.projects.get(idSchema.parse(projectId));
-    if (!project) throw new NotFoundError('Project', projectId);
-    return { project };
+    const inspected = await this.projects.inspect(idSchema.parse(projectId));
+    if (!inspected) throw new NotFoundError('Project', projectId);
+    return { project: inspected.project, read_state: inspected.state };
   }
 
   async commitList(projectId: string) {
-    await this.projectGet(projectId);
+    if (!await this.projects.inspect(idSchema.parse(projectId))) throw new NotFoundError('Project', projectId);
     const commits = await this.commits.list(projectId);
-    return { commits: commits.map(({ metadata, body }) => ({
-      id: metadata.id, sequence: metadata.sequence, created_at: metadata.created_at,
-      title: heading(body),
+    return { commits: commits.map(({ metadata, content }) => ({
+      id: metadata.id, sequence: metadata.sequence, created_at: metadata.created_at, title: content.title,
     })) };
   }
 
   async commitGet(projectId: string, commitId: string) {
-    await this.projectGet(projectId);
+    if (!await this.projects.inspect(idSchema.parse(projectId))) throw new NotFoundError('Project', projectId);
     const commit = await this.commits.get(projectId, idSchema.parse(commitId));
     if (!commit) throw new NotFoundError('Commit', commitId);
     return { commit };
   }
 
-  async experienceList(filters: { status?: 'candidate' | 'validated' | 'principle'; lifecycle?: 'active' | 'merged' | 'superseded'; project_id?: string }) {
-    if (filters.project_id !== undefined) idSchema.parse(filters.project_id);
+  async experienceList(filters: { maturity?: 'candidate' | 'validated' | 'principle'; project_id?: string } = {}) {
+    if (filters.project_id) idSchema.parse(filters.project_id);
     const experiences = await this.experiences.list();
-    return { experiences: experiences.filter(({ metadata }) =>
-      metadata.lifecycle === (filters.lifecycle ?? 'active') &&
-      (filters.status === undefined || metadata.status === filters.status) &&
-      (filters.project_id === undefined || metadata.source_projects.includes(filters.project_id))
-    ).map(({ metadata, body }) => ({
-      id: metadata.id, title: heading(body), status: metadata.status,
-      lifecycle: metadata.lifecycle, updated_at: metadata.updated_at,
-      source_projects: metadata.source_projects,
-    })) };
+    const summaries = [];
+    for (const experience of experiences) {
+      const projectIds = new Set<string>();
+      for (const commitId of experience.metadata.source_commits) {
+        for (const { project } of await this.projects.listInspected()) {
+          if (await this.commits.get(project.metadata.id, commitId)) projectIds.add(project.metadata.id);
+        }
+      }
+      if (filters.maturity && experience.content.maturity !== filters.maturity) continue;
+      if (filters.project_id && !projectIds.has(filters.project_id)) continue;
+      summaries.push({
+        id: experience.metadata.id, title: experience.content.title,
+        core_statement: experience.content.core_statement, maturity: experience.content.maturity,
+        source_projects: [...projectIds], updated_at: experience.metadata.updated_at,
+      });
+    }
+    return { experiences: summaries };
   }
 
   async experienceGet(experienceId: string) {
-    const experience = await this.experiences.get(idSchema.parse(experienceId));
-    if (!experience) throw new NotFoundError('Experience', experienceId);
-    return { experience };
+    const inspected = await this.experiences.inspect(idSchema.parse(experienceId));
+    if (!inspected) throw new NotFoundError('Experience', experienceId);
+    return { experience: inspected.experience, read_state: inspected.state };
+  }
+
+  async search(input: { query: string; kind?: 'project' | 'experience'; project_id?: string }) {
+    const terms = normalize(input.query).split(' ').filter(Boolean);
+    const results: Array<{ kind: 'project' | 'experience'; id: string; title: string; snippet: string }> = [];
+    if (input.kind !== 'experience') {
+      const projects = await this.projects.list();
+      for (const project of projects) {
+        if (input.project_id && project.metadata.id !== input.project_id) continue;
+        const haystack = normalize(JSON.stringify(project.content));
+        if (terms.every((term) => haystack.includes(term))) results.push({
+          kind: 'project', id: project.metadata.id, title: project.content.name,
+          snippet: project.content.current_state,
+        });
+      }
+    }
+    if (input.kind !== 'project') {
+      const experiences = await this.experiences.list();
+      for (const experience of experiences) {
+        if (input.project_id) {
+          let matched = false;
+          for (const commitId of experience.metadata.source_commits) {
+            if (await this.commits.get(input.project_id, commitId)) matched = true;
+          }
+          if (!matched) continue;
+        }
+        const haystack = normalize(JSON.stringify(experience.content));
+        if (terms.every((term) => haystack.includes(term))) results.push({
+          kind: 'experience', id: experience.metadata.id, title: experience.content.title,
+          snippet: experience.content.core_statement,
+        });
+      }
+    }
+    return { results };
   }
 
   async prepareSave(input: SaveProposal) {
@@ -81,12 +123,12 @@ export class MemoryService {
   async changesetGet(changeSetId: string) {
     const changeSet = await this.changeSets.get(idSchema.parse(changeSetId));
     if (!changeSet) throw new NotFoundError('ChangeSet', changeSetId);
-    return { changeset_id: changeSet.id, status: changeSet.status, created_at: changeSet.created_at, preview: previewChangeSet(changeSet) };
+    return { changeset_id: changeSet.id, status: changeSet.status, prepared_at: changeSet.prepared_at, preview: previewChangeSet(changeSet) };
   }
 
   async applyChangeSet(changeSetId: string) {
-    const changeSet = await this.lifecycle.applyChangeSet(idSchema.parse(changeSetId));
-    return { status: 'applied' as const, changeset_id: changeSet.id, project_id: changeSet.project_id };
+    const result = await this.lifecycle.applyChangeSet(idSchema.parse(changeSetId));
+    return { status: result.outcome, changeset_id: result.changeSet.id, project_id: result.changeSet.project_id };
   }
 
   async rejectChangeSet(changeSetId: string) {
@@ -95,6 +137,6 @@ export class MemoryService {
   }
 }
 
-function heading(body: string): string {
-  return /^# (.+)$/m.exec(body)?.[1] ?? '(untitled)';
+function normalize(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 }

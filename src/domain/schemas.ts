@@ -1,125 +1,120 @@
 import { z } from 'zod';
 
-export const idSchema = z.string().regex(/^[a-z0-9-]+$/, 'ID must contain only lowercase letters, digits, and hyphens');
-const timestampSchema = z.iso.datetime({ offset: true });
-const idListSchema = z.array(idSchema);
+export const idSchema = z.string().regex(/^[a-z0-9-]+$/);
+export const opaqueProjectIdSchema = z.string().regex(/^prj-[0-9a-f]{32}$/);
+export const opaqueCommitIdSchema = z.string().regex(/^cmt-[0-9a-f]{32}$/);
+export const opaqueExperienceIdSchema = z.string().regex(/^exp-[0-9a-f]{32}$/);
+export const timestampSchema = z.iso.datetime({ offset: true });
+const nonblank = z.string().trim().min(1).refine((value) => !/^(暂无|无|n\/a)$/i.test(value), 'Placeholder content is not allowed');
+const singleLine = nonblank.refine((value) => !/[\r\n]/.test(value), 'Must be one line');
+const items = z.array(singleLine);
+const uniqueIds = z.array(idSchema).refine((v) => new Set(v).size === v.length, 'Duplicate ID');
 
-export const projectMetadataSchema = z.strictObject({
-  type: z.literal('project'),
-  id: idSchema,
-  name: z.string().min(1),
-  status: z.enum(['active', 'paused', 'completed', 'archived']),
-  revision: z.number().int().positive(),
-  created_at: timestampSchema,
-  updated_at: timestampSchema,
-  latest_commit: idSchema.nullable(),
+export const projectContentSchema = z.strictObject({
+  name: singleLine, goal: nonblank, current_state: nonblank,
+  confirmed_decisions: items, open_questions: items, next_steps: items,
+  lifecycle: z.enum(['active', 'paused', 'completed', 'archived']),
 });
-export const projectSchema = z.strictObject({ metadata: projectMetadataSchema, body: z.string() });
-export type ProjectMetadata = z.infer<typeof projectMetadataSchema>;
+export type ProjectContent = z.infer<typeof projectContentSchema>;
+export const projectMetadataSchema = z.strictObject({
+  type: z.literal('project'), id: opaqueProjectIdSchema, revision: z.number().int().positive(),
+  created_at: timestampSchema, updated_at: timestampSchema,
+});
+export const projectSchema = z.strictObject({ metadata: projectMetadataSchema, content: projectContentSchema });
 export type Project = z.infer<typeof projectSchema>;
 
-export const commitMetadataSchema = z.strictObject({
-  type: z.literal('commit'),
-  id: idSchema,
-  project_id: idSchema,
-  sequence: z.number().int().positive(),
-  created_at: timestampSchema,
-  previous_commit: idSchema.nullable(),
-}).superRefine((metadata, context) => {
-  if (metadata.sequence === 1 && metadata.previous_commit !== null) {
-    context.addIssue({ code: 'custom', path: ['previous_commit'], message: 'The first Commit has no predecessor' });
-  }
-  if (metadata.sequence > 1 && metadata.previous_commit === null) {
-    context.addIssue({ code: 'custom', path: ['previous_commit'], message: 'Later Commits need a predecessor' });
-  }
+export const commitContentSchema = z.strictObject({
+  title: singleLine, stage_goal: nonblank.optional(), starting_point: nonblank,
+  key_findings: items.optional(), turning_points: items.optional(),
+  decisions: items.optional(), rejected_approaches: items.optional(),
+  ending_state: nonblank, open_questions: items.optional(), next_steps: items.optional(),
+}).refine((v) => ['key_findings', 'turning_points', 'decisions', 'rejected_approaches']
+  .some((key) => ((v as Record<string, unknown>)[key] as string[] | undefined)?.length), 'Commit needs a cognitive change');
+export type CommitContent = z.infer<typeof commitContentSchema>;
+export const commitOperationSchema = z.strictObject({
+  action: z.enum(['create', 'enrich']), experience_id: idSchema,
 });
-export const commitSchema = z.strictObject({ metadata: commitMetadataSchema, body: z.string() });
-export type CommitMetadata = z.infer<typeof commitMetadataSchema>;
+export const commitMetadataSchema = z.strictObject({
+  type: z.literal('commit'), id: opaqueCommitIdSchema, project_id: opaqueProjectIdSchema,
+  sequence: z.number().int().positive(), created_at: timestampSchema,
+  revises_commit_ids: uniqueIds, experience_changes: z.array(commitOperationSchema),
+});
+export const commitSchema = z.strictObject({ metadata: commitMetadataSchema, content: commitContentSchema });
 export type Commit = z.infer<typeof commitSchema>;
 
-export const experienceMetadataSchema = z.strictObject({
-  type: z.literal('experience'),
-  id: idSchema,
-  status: z.enum(['candidate', 'validated', 'principle']),
-  lifecycle: z.enum(['active', 'merged', 'superseded']),
-  revision: z.number().int().positive(),
-  created_at: timestampSchema,
-  updated_at: timestampSchema,
-  source_projects: idListSchema,
-  source_commits: idListSchema,
-  supersedes: idListSchema,
-  superseded_by: idSchema.nullable(),
-  merged_from: idListSchema,
-  merged_into: idSchema.nullable(),
-  abstracted_from: idListSchema,
-  tags: z.array(z.string()),
-}).superRefine((metadata, context) => {
-  if (metadata.lifecycle === 'merged' && metadata.merged_into === null) {
-    context.addIssue({ code: 'custom', path: ['merged_into'], message: 'Merged Experience needs merged_into' });
-  }
-  if (metadata.lifecycle === 'superseded' && metadata.superseded_by === null) {
-    context.addIssue({ code: 'custom', path: ['superseded_by'], message: 'Superseded Experience needs superseded_by' });
-  }
+export const experienceContentSchema = z.strictObject({
+  title: singleLine, core_statement: nonblank,
+  context: nonblank.optional(), evidence: nonblank.optional(),
+  applies_when: nonblank.optional(), limitations: nonblank.optional(),
+  recommended_action: nonblank.optional(),
+  maturity: z.enum(['candidate', 'validated', 'principle']),
 });
-export const experienceSchema = z.strictObject({ metadata: experienceMetadataSchema, body: z.string() });
-export type ExperienceMetadata = z.infer<typeof experienceMetadataSchema>;
+export type ExperienceContent = z.infer<typeof experienceContentSchema>;
+export const experienceMetadataSchema = z.strictObject({
+  type: z.literal('experience'), id: opaqueExperienceIdSchema, source_commits: uniqueIds,
+  revision: z.number().int().positive(), created_at: timestampSchema, updated_at: timestampSchema,
+});
+export const experienceSchema = z.strictObject({ metadata: experienceMetadataSchema, content: experienceContentSchema });
 export type Experience = z.infer<typeof experienceSchema>;
 
-export const ignoredItemSchema = z.strictObject({ summary: z.string().min(1), reason: z.string().min(1) });
+export const ignoredItemSchema = z.strictObject({ summary: nonblank, reason: nonblank });
 export type IgnoredItem = z.infer<typeof ignoredItemSchema>;
-
-export const experienceStatusSchema = z.enum(['candidate', 'validated', 'principle']);
-const newExperienceInputSchema = z.strictObject({
-  title: z.string().min(1), body: z.string(), status: experienceStatusSchema.optional(), tags: z.array(z.string()).optional(),
-});
 export const experienceProposalSchema = z.discriminatedUnion('action', [
-  newExperienceInputSchema.extend({ action: z.literal('create') }),
-  z.strictObject({ action: z.literal('enrich'), target_id: idSchema, body: z.string(), status: experienceStatusSchema.optional(), tags: z.array(z.string()).optional() }),
-  z.strictObject({ action: z.literal('supersede'), target_id: idSchema, replacement: newExperienceInputSchema }),
-  z.strictObject({ action: z.literal('merge'), source_ids: z.array(idSchema).min(2).refine((ids) => new Set(ids).size === ids.length, 'source_ids must be distinct'), result: newExperienceInputSchema }),
+  z.strictObject({ action: z.literal('create'), target: experienceContentSchema, source_commits: uniqueIds.optional() }),
+  z.strictObject({
+    action: z.literal('enrich'), target_id: idSchema, base_revision: z.number().int().positive(),
+    target: experienceContentSchema, source_commits: uniqueIds.optional(),
+  }),
 ]);
 export type ExperienceProposal = z.infer<typeof experienceProposalSchema>;
-
 export const saveProposalSchema = z.strictObject({
-  project_id: idSchema,
-  project_update: z.strictObject({
-    name: z.string().min(1).optional(),
-    status: projectMetadataSchema.shape.status.optional(),
-    body: z.string().optional(),
-  }).optional(),
-  commit: z.strictObject({ title: z.string().min(1), body: z.string() }).optional(),
-  experience_changes: z.array(experienceProposalSchema),
-  ignored_items: z.array(ignoredItemSchema),
+  project_id: idSchema.nullable(),
+  base_project_revision: z.number().int().nonnegative(),
+  base_commit_head: idSchema.nullable(),
+  change_kind: z.enum(['historical_change', 'maintenance_correction']),
+  external_change: z.enum(['adopt', 'reconcile']).optional(),
+  project_target: projectContentSchema,
+  commit: z.strictObject({ content: commitContentSchema, revises_commit_ids: uniqueIds.optional() }).optional(),
+  experiences: z.array(experienceProposalSchema),
+  ignored_items: z.array(ignoredItemSchema).optional(),
 });
 export type SaveProposal = z.infer<typeof saveProposalSchema>;
 
 export const preparedExperienceChangeSchema = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('create'), purpose: z.enum(['create', 'supersede', 'merge']), result: experienceSchema }),
-  z.strictObject({ action: z.literal('update'), purpose: z.enum(['enrich', 'supersede', 'merge']), target_id: idSchema, base_revision: z.number().int().positive(), result: experienceSchema }),
+  z.strictObject({
+    action: z.literal('create'), id: idSchema, target: experienceContentSchema, source_commits: uniqueIds,
+  }),
+  z.strictObject({
+    action: z.literal('enrich'), id: idSchema, base_revision: z.number().int().positive(),
+    base_fingerprint: z.string().length(64), target: experienceContentSchema, source_commits: uniqueIds,
+  }),
 ]);
 export type PreparedExperienceChange = z.infer<typeof preparedExperienceChangeSchema>;
-
 export const changeSetSchema = z.strictObject({
   id: idSchema,
-  status: z.enum(['pending', 'applied', 'rejected']),
-  created_at: timestampSchema,
-  applied_at: timestampSchema.nullable(),
-  rejected_at: timestampSchema.nullable(),
+  status: z.enum(['pending', 'applied', 'rejected', 'conflicted']),
+  prepared_at: timestampSchema, completed_at: timestampSchema.nullable(),
   project_id: idSchema,
-  base_project_revision: z.number().int().positive(),
-  base_commit_id: idSchema.nullable(),
+  project_is_new: z.boolean(),
+  external_change: z.enum(['adopt', 'reconcile']).nullable(),
+  base_project_revision: z.number().int().nonnegative(),
+  base_project_fingerprint: z.string().length(64),
+  base_commit_head: idSchema.nullable(),
   base_commit_sequence: z.number().int().nonnegative(),
-  project_change: z.strictObject({
-    base_revision: z.number().int().positive(),
-    changed_fields: z.array(z.enum(['name', 'status', 'body', 'latest_commit'])),
-    result: projectSchema,
+  change_kind: z.enum(['historical_change', 'maintenance_correction']),
+  project_change: z.strictObject({ changed_fields: z.array(z.string()), target: projectContentSchema }).nullable(),
+  commit_change: z.strictObject({
+    id: idSchema, sequence: z.number().int().positive(), content: commitContentSchema,
+    revises_commit_ids: uniqueIds, experience_changes: z.array(commitOperationSchema),
   }).nullable(),
-  commit_change: commitSchema.nullable(),
   experience_changes: z.array(preparedExperienceChangeSchema),
   ignored_items: z.array(ignoredItemSchema),
 }).superRefine((value, context) => {
-  if (value.status === 'pending' && (value.applied_at !== null || value.rejected_at !== null)) context.addIssue({ code: 'custom', message: 'Pending ChangeSet cannot have completion timestamps' });
-  if (value.status === 'applied' && (value.applied_at === null || value.rejected_at !== null)) context.addIssue({ code: 'custom', message: 'Applied ChangeSet needs applied_at only' });
-  if (value.status === 'rejected' && (value.rejected_at === null || value.applied_at !== null)) context.addIssue({ code: 'custom', message: 'Rejected ChangeSet needs rejected_at only' });
+  if ((value.status === 'pending') !== (value.completed_at === null)) {
+    context.addIssue({ code: 'custom', path: ['completed_at'], message: 'Completion time must match terminal status' });
+  }
+  if (value.project_is_new && (value.base_project_revision !== 0 || !value.project_change)) {
+    context.addIssue({ code: 'custom', path: ['project_change'], message: 'New Project requires a creation target' });
+  }
 });
 export type ChangeSet = z.infer<typeof changeSetSchema>;

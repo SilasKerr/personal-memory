@@ -1,17 +1,13 @@
+import { renderCommit, renderExperience, renderProject } from '../domain/markdown-content.js';
 import { changeSetSchema, type ChangeSet, type IgnoredItem } from '../domain/schemas.js';
 
 export interface MemoryCommitPreview {
   changeset_id: string;
-  project: { id: string; changed_fields: string[]; next_revision: number; name: string; status: string; latest_commit: string | null; body: string | null } | null;
-  commit: { id: string; title: string; sequence: number; body: string } | null;
+  project: { id: string; changed_fields: string[]; next_revision: number; target_markdown: string } | null;
+  commit: { id: string; sequence: number; title: string; markdown: string } | null;
   experiences: Array<{
-    action: 'create' | 'update';
-    purpose: 'create' | 'enrich' | 'supersede' | 'merge';
-    id: string;
-    title: string;
-    target_id: string | null;
-    body: string;
-    lifecycle: string;
+    action: 'create' | 'enrich'; id: string; title: string; maturity: string;
+    source_commits: string[]; markdown: string;
   }>;
   ignored_items: IgnoredItem[];
 }
@@ -21,33 +17,19 @@ export function previewChangeSet(input: ChangeSet): MemoryCommitPreview {
   return {
     changeset_id: changeSet.id,
     project: changeSet.project_change ? {
-      id: changeSet.project_id,
-      changed_fields: changeSet.project_change.changed_fields,
-      next_revision: changeSet.project_change.result.metadata.revision,
-      name: changeSet.project_change.result.metadata.name,
-      status: changeSet.project_change.result.metadata.status,
-      latest_commit: changeSet.project_change.result.metadata.latest_commit,
-      body: changeSet.project_change.changed_fields.includes('body') ? changeSet.project_change.result.body : null,
+      id: changeSet.project_id, changed_fields: changeSet.project_change.changed_fields,
+      next_revision: changeSet.base_project_revision + 1,
+      target_markdown: renderProject(changeSet.project_change.target),
     } : null,
     commit: changeSet.commit_change ? {
-      id: changeSet.commit_change.metadata.id,
-      title: heading(changeSet.commit_change.body),
-      sequence: changeSet.commit_change.metadata.sequence,
-      body: changeSet.commit_change.body,
+      id: changeSet.commit_change.id, sequence: changeSet.commit_change.sequence,
+      title: changeSet.commit_change.content.title,
+      markdown: renderCommit(changeSet.commit_change.content),
     } : null,
-    experiences: changeSet.experience_changes.map((change) => ({
-      action: change.action,
-      purpose: change.purpose,
-      id: change.result.metadata.id,
-      title: heading(change.result.body),
-      target_id: change.action === 'update' ? change.target_id : null,
-      body: change.result.body,
-      lifecycle: change.result.metadata.lifecycle,
+    experiences: changeSet.experience_changes.map((item) => ({
+      action: item.action, id: item.id, title: item.target.title, maturity: item.target.maturity,
+      source_commits: item.source_commits, markdown: renderExperience(item.target),
     })),
     ignored_items: changeSet.ignored_items,
   };
-}
-
-function heading(body: string): string {
-  return /^# (.+)$/m.exec(body)?.[1] ?? '(untitled)';
 }
